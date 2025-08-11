@@ -24,6 +24,7 @@ const PDFDocument = require("pdfkit");
 const fs = require("fs");
 const path = require("path");
 const { Mongoose } = require("mongoose");
+const bookingModel = require("../models/bookingModel");
 const logoPath = path.join(__dirname, "Logo.png");
 
 const twilioClient = twilio(
@@ -2503,33 +2504,253 @@ console.log("product.rate",product.ratings);
 //   }
 // };
 
+// const getAllRatings = async (req, res) => {
+//   try {
+//     const ratedBookings = await bookingModel.find(
+//       { status: "Rated", feedback: { $exists: true } },
+//       { feedback: 1, _id: 1, user: 1, bookingDate: 1, startTime: 1, endTime:1 }
+//     ).populate("user", "firstname lastname email"); // Populate user details from userId in Booking
+
+//     const ratedProducts = await productModel
+//       .find(
+//         { "ratings.0": { $exists: true } },
+//         { name: 1, ratings: 1, location: 1, title: 1 }
+//       )
+//       .populate("location", "name direction"); // Populate location details from location in Product
+
+//     const result = {
+//       bookings: ratedBookings,
+//       products: ratedProducts,
+//     };
+
+//     res.status(200).json({
+//       message: "All ratings from bookings and products retrieved",
+//       result,
+//     });
+//   } catch (error) {
+//     res.status(500).json({ message: "Server error", error: error.message });
+//   }
+// };
+
+
+// const getAllRatings = async (req, res) => {
+//   try {
+//     // Step 1: Find all bookings that have feedback (both rating and message exist)
+//     const bookingsWithFeedback = await bookingModel
+//       .find({
+//         "feedback.rating": { $exists: true, $ne: null },
+//         // "feedback.message": { $exists: true, $ne: null },
+//       })
+//       .populate("user", "name email phone") // Populate user details
+//       .populate({
+//         path: "podId",
+//         select: "title location images",
+//         populate: {
+//           path: "location",
+//           select: "name direction address", // Populate location details
+//         },
+//       })
+//       .sort({ createdAt: -1 }); // Sort by newest first
+
+//     // Step 2: Create a new array with selected fields
+//     const feedbackArray = bookingsWithFeedback.map((booking) => {
+//       return {
+//         bookingId: booking._id,
+//         feedback: {
+//           rating: booking.feedback.rating,
+//           message: booking.feedback.message,
+//         },
+//         username: booking.user?.name || "Unknown User",
+//         userEmail: booking.user?.email || "",
+//         userPhone: booking.user?.phone || "",
+//         podTitle: booking.podTitle,
+//         podId: booking.podId?._id,
+//         podImages: booking.podId?.images || [],
+//         locationDetails: {
+//           locationName: booking.podId?.location?.name || "",
+//           locationAddress: booking.podId?.location?.address || "",
+//           direction: booking.podId?.location?.direction || "",
+//         },
+//         bookingDate: booking.bookingDate,
+//         startTime: booking.startTime,
+//         endTime: booking.endTime,
+//         bookingPurpose: booking.bookingPurpose,
+//         status: booking.status,
+//         timeSlotNumber: booking.timeSlotNumber,
+//         createdAt: booking.createdAt,
+//         updatedAt: booking.updatedAt,
+//       };
+//     });
+
+//     // Step 3: Return the response
+//     res.status(200).json({
+//       success: true,
+//       message: "Bookings with feedback retrieved successfully",
+//       totalFeedbacks: feedbackArray.length,
+//       data: feedbackArray,
+//     });
+//   } catch (error) {
+//     console.error("Error fetching bookings with feedback:", error);
+//     res.status(500).json({
+//       success: false,
+//       message: "Error fetching bookings with feedback",
+//       error: error.message,
+//     });
+//   }
+// };
+
+
+
+
 const getAllRatings = async (req, res) => {
   try {
-    const ratedBookings = await Booking.find(
-      { status: "Rated", feedback: { $exists: true } },
-      { feedback: 1, _id: 1, userId: 1, bookingDate: 1, startTime: 1, endTime:1 }
-    ).populate("user", "firstname lastname email"); // Populate user details from userId in Booking
+    // Get ALL booking feedbacks (both Completed with feedback and Rated status)
+    const bookingFeedbacks = await bookingModel
+      .find({
+        $or: [
+          // Option 1: Bookings with Rated status and feedback exists
+          { status: "Rated", feedback: { $exists: true } },
+          // Option 2: Any booking with rating (regardless of status)
+          { "feedback.rating": { $exists: true, $ne: null } },
+          // Option 3: Completed bookings with feedback
+          {
+            status: "Completed",
+            "feedback.rating": { $exists: true, $ne: null },
+          },
+        ],
+      })
+      .populate("user", "firstname lastname email phone")
+      .populate({
+        path: "podId",
+        select: "title location images",
+        populate: {
+          path: "location",
+          select: "name direction address",
+        },
+      })
+      .sort({ createdAt: -1 });
 
-    const ratedProducts = await productModel
+    // Get ALL product ratings
+    const productRatings = await productModel
       .find(
         { "ratings.0": { $exists: true } },
-        { name: 1, ratings: 1, location: 1, title: 1 }
+        { title: 1, ratings: 1, location: 1, images: 1 }
       )
-      .populate("location", "name direction"); // Populate location details from location in Product
+      .populate("location", "name direction address");
 
-    const result = {
-      bookings: ratedBookings,
-      products: ratedProducts,
+    // Process booking feedbacks
+    const processedBookingFeedbacks = bookingFeedbacks.map((booking) => ({
+      id: booking._id,
+      type: "booking",
+      rating: booking.feedback?.rating || null,
+      message: booking.feedback?.message || "",
+      username: booking.user
+        ? `${booking.user.firstname || ""} ${
+            booking.user.lastname || ""
+          }`.trim()
+        : "Unknown User",
+      userEmail: booking.user?.email || "",
+      userPhone: booking.user?.phone || "",
+      podTitle: booking.podTitle,
+      podId: booking.podId?._id,
+      podImages: booking.podId?.images || [],
+      locationDetails: {
+        locationName: booking.podId?.location?.name || "",
+        locationAddress: booking.podId?.location?.address || "",
+        direction: booking.podId?.location?.direction || "",
+      },
+      bookingDate: booking.bookingDate,
+      startTime: booking.startTime,
+      endTime: booking.endTime,
+      bookingPurpose: booking.bookingPurpose,
+      status: booking.status,
+      timeSlotNumber: booking.timeSlotNumber,
+      source: "booking_feedback",
+      createdAt: booking.createdAt,
+      updatedAt: booking.updatedAt,
+    }));
+
+    // Process product ratings - flatten all ratings from all products
+    const processedProductRatings = [];
+    productRatings.forEach((product) => {
+      product.ratings.forEach((rating) => {
+        processedProductRatings.push({
+          id: rating._id,
+          type: "product",
+          rating: rating.star,
+          message: rating.comment || "",
+          username: "Unknown User", // You might want to populate userId if needed
+          userEmail: "",
+          userPhone: "",
+          podTitle: product.title,
+          podId: product._id,
+          podImages: product.images || [],
+          locationDetails: {
+            locationName: product.location?.name || "",
+            locationAddress: product.location?.address || "",
+            direction: product.location?.direction || "",
+          },
+          bookingDate: null,
+          startTime: null,
+          endTime: null,
+          bookingPurpose: null,
+          status: null,
+          timeSlotNumber: null,
+          source: "product_rating",
+          createdAt: rating.createdAt,
+          updatedAt: rating.createdAt,
+        });
+      });
+    });
+
+    // Combine both arrays
+    const allFeedbacks = [
+      ...processedBookingFeedbacks,
+      ...processedProductRatings,
+    ];
+
+    // Sort by creation date (newest first)
+    allFeedbacks.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    // Calculate statistics
+    const stats = {
+      totalFeedbacks: allFeedbacks.length,
+      bookingFeedbacks: processedBookingFeedbacks.length,
+      productRatings: processedProductRatings.length,
+      averageRating:
+        allFeedbacks.length > 0
+          ? (
+              allFeedbacks.reduce((sum, item) => sum + (item.rating || 0), 0) /
+              allFeedbacks.filter((item) => item.rating).length
+            ).toFixed(2)
+          : 0,
+      ratingDistribution: {},
     };
 
+    // Calculate rating distribution
+    allFeedbacks.forEach((item) => {
+      if (item.rating) {
+        stats.ratingDistribution[item.rating] =
+          (stats.ratingDistribution[item.rating] || 0) + 1;
+      }
+    });
+
     res.status(200).json({
-      message: "All ratings from bookings and products retrieved",
-      result,
+      success: true,
+      message: "All feedback from bookings and products retrieved successfully",
+      stats,
+      data: allFeedbacks,
     });
   } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
+    console.error("Error fetching combined feedback:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching combined feedback",
+      error: error.message,
+    });
   }
 };
+
 
 const updateBookingStatusByAdmin = asyncHandler(async (req, res) => {
   const { status } = req.body;

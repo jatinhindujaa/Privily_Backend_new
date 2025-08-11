@@ -1,3 +1,5 @@
+
+
 const nodemailer = require("nodemailer");
 const asyncHandler = require("express-async-handler");
 const User = require("../models/userModel");
@@ -9,10 +11,10 @@ const sendEmail = async (to, subject, html, attachments = []) => {
 
   try {
     let transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
+      // host: "smtp.gmail.com",
       service: "gmail",
-      port: 465,
-      secure: true,
+      // port: 465,
+      // secure: true,
       auth: {
         user: process.env.MAIL_ID,
         pass: process.env.MP,
