@@ -25,7 +25,7 @@ router.post("/create",  createLocations);
 router.get("/features", getAllFeaturesDetails);
 router.post(
   "/update-features-order",
-  updateFeaturesOrder
+  updateFeaturesOrder 
 );
 router.post("/create-features", authMiddleware, isAdmin, createFeature);
 router.put("/block-features/:id", authMiddleware, isAdmin, blockFeature);
